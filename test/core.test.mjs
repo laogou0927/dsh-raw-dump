@@ -29,6 +29,7 @@ import {
   normalizeBody,
   parseDumpFile,
   projectHeaders,
+  protocolFromPath,
   renderPage,
   resolveConfig,
   safeUrl,
@@ -160,6 +161,115 @@ test("describeWire 同时认 Messages 与 Chat Completions，非 JSON 返回 nul
   assert.equal(describeWire("data: x"), null);
   assert.equal(describeWire(""), null);
   assert.equal(describeWire('[1,2]'), null);
+});
+
+test("回归锁：OpenAI 多模态消息（content 是数组）不得被判成 Messages", () => {
+  // 真实踩过的形状：pi-ai 的 openai-completions 请求，808 条消息里只有 1 条 content 是
+  // 数组（text + image_url），早期"content 是数组就算 Messages"的规则把它整条判错了。
+  const body = JSON.stringify({
+    model: "deepseek-v4.1-flash",
+    stream: true,
+    stream_options: { include_usage: true },
+    store: false,
+    max_completion_tokens: 32000,
+    messages: [
+      { role: "system", content: "你是助手" },
+      { role: "user", content: [{ type: "text", text: "看看这张图" }, { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }] },
+      { role: "assistant", content: null, tool_calls: [{ id: "call_1", type: "function", function: { name: "noop", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: "call_1", content: "{\"ok\":true}" },
+    ],
+    tools: [{ type: "function", function: { name: "noop", parameters: { type: "object" } } }],
+  });
+  const wire = describeWire(body);
+  assert.equal(wire.protocol, "chat-completions", "OpenAI 形状被误判成 Messages 了");
+  assert.equal(wire.blocks, 2);                  // 那条多模态消息的 2 个块照样统计
+  assert.equal(wire.messages, 4);
+  assert.equal(wire.tools, 1);
+
+  // 反向：Anthropic 的 tool_use / tool_result 块不得被判成 Chat Completions
+  const anthropic = describeWire(JSON.stringify({
+    model: "deepseek-flash",
+    max_tokens: 64,
+    stream: true,
+    messages: [
+      { role: "assistant", content: [{ type: "text", text: "看下" }, { type: "tool_use", id: "t1", name: "noop", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
+    ],
+    tools: [{ name: "noop", input_schema: { type: "object" } }],
+  }));
+  assert.equal(anthropic.protocol, "messages");
+});
+
+test("详情接口以 body 为准：元数据里存错的协议会被纠正（老记录也能显示对）", async () => {
+  const dir = await makeDir();
+  try {
+    const day = "2026-09-29";
+    const base = baseName(new Date(2026, 8, 29, 1, 2, 3, 4), "deadbeef");
+    await mkdir(join(dir, day), { recursive: true });
+    // 一条铁打的 OpenAI 形状 body
+    const body = JSON.stringify({
+      model: "deepseek-v4.1-flash",
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: [{ role: "tool", tool_call_id: "c1", content: "ok" }],
+      tools: [{ type: "function", function: { name: "noop", parameters: { type: "object" } } }],
+    });
+    await writeFile(join(dir, day, `${base}${SUFFIXES.request}`), JSON.stringify(JSON.parse(body), null, 2) + "\n", "utf8");
+    // 元数据里故意写上旧版本判错的值
+    await writeFile(join(dir, day, `${base}${SUFFIXES.requestHeaders}`), JSON.stringify({
+      _dsh: {
+        at: "2026-09-29T01:02:03.004Z",
+        id: "deadbeef-0000-0000-0000-000000000000",
+        host: "127.0.0.1:8788",
+        method: "POST",
+        url: "http://127.0.0.1:8788/v1/chat/completions",
+        endpoint: "completions",
+        model: "deepseek-v4.1-flash",
+        stream: true,
+        sessionId: null,
+        wire: { protocol: "messages", messages: 1, blocks: 0, systemChars: 0, tools: 1 },
+        bodyKind: "string",
+        bodyBytes: Buffer.byteLength(body),
+        bodyTruncated: false,
+        requestFile: `${base}${SUFFIXES.request}`,
+        headers: {},
+      },
+    }, null, 2) + "\n", "utf8");
+
+    const capture = createCapture({ directory: dir, headerAllow: [] }, { target: fakeTarget(async () => okResponse()), warn: silent });
+    const record = (await capture.get(`${day}/${base}`))[0];
+    assert.equal(record.protocol, "chat-completions", "详情没有用 body 重算的协议纠正旧元数据");
+    assert.equal(record.wire.protocol, "chat-completions");
+    assert.equal(record.model, "deepseek-v4.1-flash");
+    // 列表走的是"只读元数据"的快路径，读不到 body，所以仍是抓取当时的记录 —— 如实如此
+    const summary = (await capture.list({ limit: 5 }))[0];
+    assert.equal(summary.protocol, "messages");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("协议判定兜底：body 无强信号时用 URL 路径，都没有则 unknown", () => {
+  const neutral = JSON.stringify({ model: "m", stream: true, messages: [{ role: "user", content: "hi" }] });
+  assert.equal(describeWire(neutral, { pathname: "/anthropic/v1/messages" }).protocol, "messages");
+  assert.equal(describeWire(neutral, { pathname: "/v1/chat/completions" }).protocol, "chat-completions");
+  assert.equal(describeWire(neutral, { pathname: "/v1/responses" }).protocol, "chat-completions");
+  assert.equal(describeWire(neutral).protocol, "unknown");
+  assert.equal(describeWire(neutral, { pathname: "/whatever" }).protocol, "unknown");
+
+  // protocolFromPath 本身（也容忍误传完整 URL）
+  assert.equal(protocolFromPath("/anthropic/v1/messages"), "messages");
+  assert.equal(protocolFromPath("/v1/messages"), "messages");
+  assert.equal(protocolFromPath("/chat/completions"), "chat-completions");
+  assert.equal(protocolFromPath("http://127.0.0.1:8788/v1/chat/completions"), "chat-completions");
+  assert.equal(protocolFromPath("https://api.deepseek.com/anthropic/v1/messages"), "messages");
+  assert.equal(protocolFromPath("/messages-archive"), null);
+  assert.equal(protocolFromPath(""), null);
+  assert.equal(protocolFromPath(undefined), null);
+
+  // 强信号优先于路径：路径说 messages，body 却是铁打的 OpenAI 形状
+  const openai = JSON.stringify({ model: "m", stream: true, messages: [{ role: "tool", tool_call_id: "x", content: "y" }] });
+  assert.equal(describeWire(openai, { pathname: "/v1/messages" }).protocol, "chat-completions");
 });
 
 test("describeResponse 从 SSE 形态认协议", () => {

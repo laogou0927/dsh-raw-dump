@@ -136,7 +136,11 @@ dsh plugin --profile web add /path/to/dsh-raw-dump
 }
 ```
 
-`wire` 是 0.2.0 新增的：一眼看出这是哪种协议、几条消息、几个内容块、system 多长、几个工具 —— 不读大 body 就能在列表里分辨。`protocol` 的判定同时认 Messages（`system` 顶层 / content 块 / `input_schema`）与 Chat Completions（字符串 content / `function.parameters`）。
+`wire` 是 0.2.0 新增的：一眼看出这是哪种协议、几条消息、几个内容块、system 多长、几个工具 —— 不读大 body 就能在列表里分辨。
+
+`protocol` 只认**协议特有的强信号**：Messages 看顶层 `system`、`tools[].input_schema`、`tool_use`/`tool_result`/`thinking` 块、`cache_control`；Chat Completions 看 `tools[].function`、`tool_calls`、`role:"tool"`、`stream_options`、`image_url`/`input_audio` 块。两边打平或都没有信号时，用 URL 路径兜底，仍认不出就是 `unknown`。
+
+> 这里踩过一次坑，值得记下：早期版本用"任何消息的 `content` 是数组"当作 Messages 的特征。但 OpenAI 的多模态消息（`text` + `image_url`）content 同样是数组 —— 一条真实的 pi-ai 请求（808 条消息、365 条带 `tool_calls`、`tools[].function`）里只要有 1 条 `image_url` 消息，整条就被错判成 `messages`。**两边都成立的特征不能用来判协议**，`test/core.test.mjs` 里有对应的回归锁。
 
 ### 内容纪律
 
@@ -161,7 +165,7 @@ dsh plugin --profile web add /path/to/dsh-raw-dump
 | `_dsh.bodyReason` | 仅当这种 body 类型无法抓取（如 async-iterable）时出现 |
 | `_dsh.url` | 只留 origin + pathname，**query 被丢掉**（key/token 不进盘） |
 | `_dsh.endpoint` | 端点名（`/anthropic/v1/messages` → `messages`），列表里扫读用 |
-| `_dsh.wire.protocol` | `messages` / `chat-completions`，从请求形状判定 |
+| `_dsh.wire.protocol` | `messages` / `chat-completions` / `unknown`，按协议特有信号判定，路径兜底 |
 | `_dsh.headers` | 默认**一个都不记**；见下面三态说明 |
 | `_dsh.sessionId` | 靠 `llm/stream` 的 `options.sessionId` + AsyncLocalStorage 归属；拿不到就是 `null` |
 | `_dsh.durationMs` | 从调用 fetch 到响应头返回（仅响应侧） |
