@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   baseName,
@@ -229,7 +229,12 @@ test("resolveConfig 钳住非法值并给出默认目录", () => {
   assert.equal(cfg.matchMode, "path");
   assert.equal(cfg.matchAll, false);       // 只有 === true 才算开
   assert.equal(cfg.captureResponse, false);
-  assert.equal(resolveConfig({ directory: "E:\\dumps" }).directory, "E:\\dumps");
+  // 显式目录一律 resolve 成绝对路径。期望值必须用**当前平台**的 resolve() 算，
+  // 不能写死 "E:\\dumps" 这种 Windows 字面量 —— 在 POSIX 上 resolve() 会把它
+  // 变成 cwd + "/E:\dumps"，CI（ubuntu）会因此挂掉。
+  const absDir = resolve("dumps-fixture");
+  assert.equal(resolveConfig({ directory: absDir }).directory, absDir);
+  assert.equal(resolveConfig({ directory: "dumps-rel" }).directory, resolve("dumps-rel"));
   assert.equal(resolveConfig({ matchMode: "SUBSTRING" }).matchMode, "path");   // 非法值退回默认
   assert.equal(resolveConfig({ matchMode: "substring" }).matchMode, "substring");
 });

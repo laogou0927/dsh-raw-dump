@@ -8,11 +8,14 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        # 两个平台都跑：Linux 抓"写死了 Windows 路径"这类假设（本仓库真实踩过一次），
+        # Windows 抓反向的 POSIX-only 假设 —— 而 Windows 正是本插件的实际使用平台。
+        os: [ubuntu-latest, windows-latest]
         node: ["20", "22"]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
