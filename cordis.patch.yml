@@ -2,8 +2,8 @@
 #
 # 把插件插进 profile 的层栈。name 必须与真实安装的包名一致（带 scope），
 # 否则加载器按 name import 会 ERR_MODULE_NOT_FOUND。
-# 0.1.5 版用的是 @rain-kl/dsh-raw-dump，本版改名成 @laogou0927/dsh-raw-dump；
-# 两者**不要同时启用**：会嵌套包装 fetch，同一次请求被写两遍。
+# 同一份 profile 里**不要同时启用两份 dsh-raw-dump**（例如本地还留着 0.1.5 版）：
+# 会嵌套包装 fetch，同一次请求被写两遍，而且两份的 loader 行 id 都是 dsh-raw-dump。
 - insert:
     - id: dsh-raw-dump
       name: '@laogou0927/dsh-raw-dump'

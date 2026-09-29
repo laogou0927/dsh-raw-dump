@@ -2,7 +2,7 @@
 
 **线级 LLM 报文落盘** —— 一个 DeepSeek Harness 插件：包装 `globalThis.fetch`，把每次发往模型端点的**原始请求体**原样追加写到磁盘（每请求一组 JSON 文件），并提供一个只读浏览页。
 
-这个仓库是 **DSH 0.2.0 适配版**（对应 0.1.5 版 `@rain-kl/dsh-raw-dump`：用途相同，改的是它赖以工作的两件事 —— **端点**与**宿主接口**；本版包名改为 `@laogou0927/dsh-raw-dump`）。
+这个仓库是 **DSH 0.2.0 适配版**：用途与 0.1.5 版相同，改的是它赖以工作的两件事 —— **端点**与**宿主接口**。
 
 ## 安装
 
@@ -20,7 +20,7 @@ dsh plugin --profile web add /path/to/dsh-raw-dump
 
 （`dsh plugin` 会转发给 pnpm，并把声明了 `dsh.bundle` 的依赖自动加进 profile 的 `dsh.profile.bundles`。）然后重启 `dsh web`。无构建步骤：纯 ESM，不依赖任何第三方包，不注册 client bundle。
 
-> ⚠️ **不要和 0.1.5 版（`@rain-kl/dsh-raw-dump`）同时启用**。两者会嵌套包装 `fetch`，同一次请求被写两遍；而且它们的 bundle patch 用的是同一个 loader 行 id（`dsh-raw-dump`），只启用其中一个。
+> ⚠️ **不要同时启用两份 dsh-raw-dump**（例如本版与本地留着的 0.1.5 版）。两份会嵌套包装 `fetch`，同一次请求被写两遍；而且它们的 bundle patch 用的是同一个 loader 行 id（`dsh-raw-dump`），只启用其中一个。
 
 ---
 
