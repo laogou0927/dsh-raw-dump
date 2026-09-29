@@ -65,7 +65,7 @@ function messagesPayload(extra = {}) {
       { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "ok" }] },
     ],
     tools: [{ name: "noop", description: "什么都不做", input_schema: { type: "object", properties: {}, additionalProperties: false } }],
-    dsh_plugin_packages: { version: 1, packages: [{ name: "@laogou0927/dsh-raw-dump", version: "0.2.0" }] },
+    dsh_plugin_packages: { version: 1, packages: [{ name: "@laogou0927/dsh-raw-dump", version: "0.2.1" }] },
     ...extra,
   });
 }
@@ -790,7 +790,7 @@ test("端到端：真 HTTP 打两种协议（Messages + Chat Completions）→ �
     assert.ok(detail.response.file.endsWith(SUFFIXES.response));
 
     // 请求体里发出去的 dsh_plugin_packages 也被原样留下（0.2.0 在 llm/stream 之后才注入）
-    assert.equal(JSON.parse(detail.request.text).dsh_plugin_packages.packages[0].version, "0.2.0");
+    assert.equal(JSON.parse(detail.request.text).dsh_plugin_packages.packages[0].version, "0.2.1");
 
     // 路径穿越 / 非法 id 一律拒绝
     assert.equal(await capture.get("../../etc/passwd"), null);
