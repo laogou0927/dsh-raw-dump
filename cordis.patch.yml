@@ -1,0 +1,32 @@
+# dsh-raw-dump bundle patch（DSH 0.2.0 适配版）
+#
+# 把插件插进 profile 的层栈。name 必须与真实安装的包名一致（带 scope），
+# 否则加载器按 name import 会 ERR_MODULE_NOT_FOUND。
+# 0.1.5 版用的是 @rain-kl/dsh-raw-dump，本版改名成 @laogou0927/dsh-raw-dump；
+# 两者**不要同时启用**：会嵌套包装 fetch，同一次请求被写两遍。
+- insert:
+    - id: dsh-raw-dump
+      name: '@laogou0927/dsh-raw-dump'
+      config:
+        enabled: true
+        # directory: 'E:/dumps/llm-raw'          # 默认 <DSH_HOME>/dsh-raw-dump
+        #
+        # 默认匹配的是 0.2.0 真正打的两个动作端点：
+        #   /anthropic/v1/messages  ← deepseek-official / deepseek-account（Messages 协议）
+        #   /chat/completions       ← pi-ai 的 openai-completions 等兼容端点
+        # 默认按**路径边界**匹配（/messages 命中 /anthropic/v1/messages，不命中 /messages-archive）。
+        # 想连图片上传（0.2.0 是 /anthropic/v1/files）一起记，把 '/files' 加进 match，或直接开 matchAll。
+        #
+        # 落盘：<directory>/<YYYY-MM-DD>/<HH-MM-SS.mmm-id>.request.json（格式化纯 JSON）
+        #      + .request.headers.json（元数据：URL/端点/model/stream/sessionId/wire 形状/字节数）
+        # captureResponse: true 额外落一对 .response.json / .response.headers.json。
+        # 代价：Messages 的 SSE 里 98% 以上是重复信封，默认关闭更省盘。
+        captureResponse: false
+        # matchMode: path                           # path（默认，路径边界）| substring（0.1.5 的旧语义）
+        # retentionDays: 0                          # 0 = 永不自动清理（用 sweep 按天数删日期目录）
+        # headerAllow: []                           # 显式空数组 = 记全部非敏感 header；不写 = 一个都不记
+        # x-dsh-auth-token 是 0.2.0 的账号凭证，必须留在打码名单里
+        redactHeaders: [authorization, api-key, x-api-key, x-dsh-auth-token, x-deepseek-auth-token, proxy-authorization, cookie, set-cookie]
+        # 0.2.0 的 Messages 端点还会带 anthropic-version / anthropic-beta /
+        # x-deepseek-harness-session-id / x-dsh-auth-token；想核对可以写：
+        # headerAllow: [content-type, anthropic-version, anthropic-beta, x-deepseek-harness-session-id]

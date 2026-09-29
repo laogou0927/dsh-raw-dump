@@ -1,0 +1,4 @@
+# 统一按 LF 存：源码全部是 LF，Windows 上检出时也不要变成 CRLF
+* text=auto eol=lf
+*.png binary
+*.ico binary
